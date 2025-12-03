@@ -84,7 +84,8 @@ class DatasetFeaturesProvider():
         """Return whether dataset can be deleted."""
         return self.__deletable
 
-    def index(self, bbox, client_srid, filterexpr, filter_geom, filter_fields):
+    #TdE[1/2] Añadimos el parámetro features_limit para limitar el número de features devueltas
+    def index(self, bbox, client_srid, filterexpr, filter_geom, filter_fields,features_limit):
         """Find features inside bounding box.
 
         :param list[float] bbox: Bounding box as [<minx>,<miny>,<maxx>,<maxy>]
@@ -160,14 +161,16 @@ class DatasetFeaturesProvider():
                     ', ST_Extent(%s) OVER () AS _overall_bbox_' %
                     self.transform_geom_sql('"{geom}"', self.srid, srid)
                 )
-
+                
+        #TdE[2/2] Añadimos el parámetro features_limit para limitar el número de features devueltas
         sql = sql_text(("""
             SELECT {columns}%s
             FROM {table}
-            {where_clause};
+            {where_clause}
+            LIMIT {features_limit};
         """ % geom_sql).format(
             columns=columns, geom=self.geometry_column, table=self.table,
-            where_clause=where_clause
+            where_clause=where_clause, features_limit=features_limit
         ))
 
         self.logger.debug(f"index query: {sql}")

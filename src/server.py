@@ -3,6 +3,10 @@ import json
 import os
 import re
 import requests
+#TdE [1/2] INIT
+import sys
+import logging
+#TdE [1/2] END
 
 from flask import Flask, Request as RequestBase, request, jsonify, send_file
 from flask_restx import Api, Resource, fields, reqparse, marshal
@@ -40,6 +44,19 @@ app.config['RESTPLUS_MASK_SWAGGER'] = False
 app.config['ERROR_404_HELP'] = False
 
 auth = auth_manager(app, api)
+
+#TdE [2/2] INIT --Para visualizar los logs en docker
+handler = logging.StreamHandler(sys.stdout)  
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+handler.setFormatter(formatter)
+handler.setLevel(logging.DEBUG)
+# clear existing handlers and add the new on
+if app.logger.hasHandlers():    
+    app.logger.handlers.clear()
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.DEBUG)
+#TdE [2/2] END --Para visualizar los logs en docker  
+
 
 # create tenant handler
 tenant_handler = TenantHandler(app.logger)

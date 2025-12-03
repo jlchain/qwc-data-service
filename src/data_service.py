@@ -1,7 +1,11 @@
 import os
 import datetime
 from collections import OrderedDict
-
+#TdE [1/4] INIT
+import requests
+import xml.etree.ElementTree as ET
+from urllib.parse import urlencode
+#TdE [1/4] END
 from sqlalchemy.exc import (DataError, IntegrityError,
                             InternalError, ProgrammingError)
 
@@ -35,6 +39,53 @@ class DataService():
         self.attachments_service = AttachmentsService(tenant, logger)
         self.db_engine = DatabaseEngine()
 
+    #TdE [2/4] INIT
+    #A partir del servicio GetCapabilities, se obtiene la escala mínima y máxima de visibilidad de una capa WMS
+    def get_layer_scale_visibility(self, dataset, wms_url):
+        # Build the GetCapabilities URL
+        params = {
+            "SERVICE": "WMS",
+            "REQUEST": "GetCapabilities"
+        }
+        headers = {
+            "User-Agent": "qwc-data-service"
+        }
+
+        full_url = f"{wms_url}?{urlencode(params)}"        
+        response = requests.get(wms_url, params=params, headers=headers)
+        
+        if response.status_code != 200:
+            self.logger.error(f"Error WMS: {response.status_code}")
+            return None
+    
+        # Parse the XML response
+        root = ET.fromstring(response.content)
+        ns = {'wms': 'http://www.opengis.net/wms'}
+    
+        #self.logger.debug(f"Dataset: {dataset}")
+        try:            
+            parts = dataset.split('.')
+            if len(parts) > 1:
+                dataset_layer = parts[-1]
+                # Find the layer by name
+                for layer in root.findall(".//wms:Layer", ns):
+                    name_elem = layer.find("wms:Name", ns)
+                    #self.logger.debug(f"Layer: {name_elem.text}")
+                    if name_elem is not None and name_elem.text == dataset_layer:
+                        #self.logger.debug(f"Layer Found!")
+                        min_scale = layer.find("wms:MinScaleDenominator", ns)
+                        max_scale = layer.find("wms:MaxScaleDenominator", ns)
+                        if min_scale is not None and max_scale is not None:
+                            self.logger.debug(f"Scale of {dataset_layer}: [{min_scale.text}:{max_scale.text}]")
+                            return {
+                                "min_scale": float(min_scale.text),
+                                "max_scale": float(max_scale.text)
+                            }
+            return None
+        except:
+            return None
+    #TdE [2/4] END
+
     def index(self, identity, translator, dataset, bbox, crs, filterexpr, filter_geom, filter_fields):
         """Find dataset features inside bounding box.
 
@@ -48,6 +99,52 @@ class DataService():
         :param str filter_geom: JSON serialized GeoJSON geometry
         :param list[string] filter_fields: Field names to return
         """
+        
+        #TdE [3/4] INIT
+        '''
+        dataset_config = self.datasets.get(dataset)
+        min_scale = dataset_config.get("min_scale")
+        max_scale = dataset_config.get("max_scale")
+        
+        #dataset="scan/Edicion.Fincas despliegue"
+        #wms_url = "http://qwc-qgis-server/ows/scan/Edicion"
+        wms_url = "http://qwc-qgis-server/ows/"+dataset.split('.')[0]
+        zoom_info = self.get_layer_scale_visibility(dataset, wms_url)
+    
+        self.logger.debug("Zoom Info: %s" % (zoom_info))
+        self.logger.debug("Bbox: %s" % (bbox))
+        array_bbox=bbox.split(",")
+        width = abs(float(array_bbox[2]) - float(array_bbox[0]))
+        height = abs(float(array_bbox[3]) - float(array_bbox[1]))
+        
+        # Suponemos un ancho de imagen en píxeles
+        image_width_px = 1024
+        pixel_size_m = 0.00028  # resolución OGC
+        
+        # Cálculo de la escala aproximada
+        scale_denominator = width / (pixel_size_m * image_width_px)
+        self.logger.debug(f"Scale Denominator: {scale_denominator:.2f}")
+        
+        if zoom_info["min_scale"] <= scale_denominator <= zoom_info["max_scale"]:
+            self.logger.debug("Bounding box dentro de escala permitida.")
+        else:
+            self.logger.debug("Bounding box FUERA de escala permitida.")
+            
+            #return {
+            #        'error': 'Invalid Zoom Level',
+            #        'error_code': 400
+            #    }
+            
+            feature_collection = { 
+                'type': 'FeatureCollection',
+                'features': [],
+                'crs': crs,
+                'bbox': bbox
+            }
+            return {'feature_collection': feature_collection}
+        '''
+        #TdE [3/4] END    
+        
         dataset_features_provider = self.dataset_features_provider(
             identity, translator, dataset, False
         )
@@ -88,9 +185,19 @@ class DataService():
                     }
 
             try:
+                
+                #TdE [4/4] INIT Limitamos la consulta al número de features inidicado en el config (features_limit) o en su defecto a 10.000
+                #               tenantConfig.json => services [name="data"].connfig.features_limit
+                """
                 feature_collection = dataset_features_provider.index(
                     bbox, srid, filterexpr, filter_geom, filter_fields
                 )
+                """
+                features_limit=self.config.get("features_limit", 10000)
+                feature_collection = dataset_features_provider.index(
+                    bbox, srid, filterexpr, filter_geom, filter_fields, features_limit
+                )
+                #TdE [4/4] END
             except (DataError, ProgrammingError) as e:
                 self.logger.error(e)
                 return {
